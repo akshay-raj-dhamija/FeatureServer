@@ -18,7 +18,6 @@ class feature_cache:
 
     def __call__(self, t):
         self.data.append(t)
-        print("Inserted into cache")
 
     def get(self):
         if len(self.data) > 0:
@@ -34,19 +33,29 @@ def get_helper():
 def flask_processing():
     print("Starting flask_processing")
     from flask import Flask
+    from flask import request
+    import logging
 
     app = Flask(__name__)
+    # Suppressing flask logs only to error because we want the input to be accepted by main process
+    log = logging.getLogger("werkzeug")
+    log.setLevel(logging.ERROR)
     global feature_cache_obj
     feature_cache_obj = feature_cache()
 
-    @app.route("/")
+    @app.route("/data")
     def hello():
         return feature_cache_obj.get()
 
-    # try:
+    @app.route("/shutdown", methods=["POST"])
+    def shutdown():
+        func = request.environ.get("werkzeug.server.shutdown")
+        if func is None:
+            raise RuntimeError("Not running with the Werkzeug Server")
+        func()
+        return "Server shutting down..."
+
     app.run(host="0.0.0.0", port="9999", debug=False)
-    # except KeyboardInterrupt:
-    #     print("KEYBOARD INTERRUPT")
     return
 
 
@@ -70,13 +79,11 @@ class cpu_process:
             ),
         )
         print(f"Started CPU process {rank}")
-        self.run()
+        cpu_process.run()
 
-    def run(self):
-        # flask_processing()
-        global feature_cache_obj
-        feature_cache_obj = feature_cache()
-        time.sleep(30)
+    @staticmethod
+    def run():
+        flask_processing()
         cpu_process.shutdown()
 
     @staticmethod
@@ -91,7 +98,6 @@ class cuda_process:
     keep_running = True
 
     def __init__(self, rank):
-        print("CALLED __init__")
         os.environ["MASTER_ADDR"] = "localhost"
         os.environ["MASTER_PORT"] = "5555"
         rpc.init_rpc(
@@ -115,9 +121,8 @@ class cuda_process:
         cls.keep_running = False
 
     def run(self, rank):
-        print("Started CUDA process on gpu {rank}")
+        print(f"Started CUDA process on gpu {rank}")
         while cuda_process.keep_running:
-            print(f"{rank} Trying to insert into cache")
             _ = rpc.remote(
                 "saver",
                 helper,
@@ -143,12 +148,13 @@ if __name__ == "__main__":
         cuda_process, nprocs=world_size, join=False  # cuda_process_initialization,
     )
     print("Joining all processes")
-    # time.sleep(30)
-    # print("TERMINATING SAVER")
-    # p.terminate()
-    try:
-        trainer_processes.join()
-        p.join()
-        print("Processes joined ... Ending")
-    except KeyboardInterrupt:
-        print("KEYBOARD INTERRUPT")
+    print(" IMPORTANT: For a graceful shutdown enter [y/Y] ".center(90, "-"))
+    s = input()
+    print(f"Registered {s}")
+    if s == "y" or s == "Y":
+        import requests
+
+        requests.post("http://localhost:9999/shutdown")
+    trainer_processes.join()
+    p.join()
+    print("Processes joined ... Ending")
