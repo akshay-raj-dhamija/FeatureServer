@@ -34,66 +34,105 @@ def flask_processing():
     @app.route('/')
     def hello():
         return feature_cache_obj.get()
+    # try:
     app.run(host='0.0.0.0',port='9999',debug=False)
+    # except KeyboardInterrupt:
+    #     print("KEYBOARD INTERRUPT")
+    return
 
 def helper(t):
     global feature_cache_obj
     feature_cache_obj(t)
-def cpu_process_initialization(rank):
-    print(f"cpu_process_initialization with rank {rank}")
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '5555'
-    rpc.init_rpc(f"saver",
-                 rank=rank,
-                 world_size = world_size + no_of_saver_processes,
-                 backend=rpc.BackendType.TENSORPIPE,
-                 rpc_backend_options=rpc.TensorPipeRpcBackendOptions(rpc_timeout=0,
-                                                                     init_method='env://')
-                 )
-    print(f"Started CPU process {rank}")
-    flask_processing()
-    rpc.shutdown()
-    return
 
-def cuda_process_initialization(rank):
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '5555'
-    rpc.init_rpc(f"{rank}",
-                 rank=rank,
-                 world_size=world_size + no_of_saver_processes,
-                 backend=rpc.BackendType.TENSORPIPE,
-                 rpc_backend_options=rpc.TensorPipeRpcBackendOptions(rpc_timeout=0,
-                                                                     init_method='env://')
-                 )
-    print(f"Started CUDA process on gpu {rank}")
-    # Sleep to give the saver process sometime to initialize
-    time.sleep(5)
-    while True:
-        print(f"{rank} Trying to insert into cache")
-        _ = rpc.remote(f"saver",
-                       helper,
-                       timeout=0,
-                       args=(dict(time=str(datetime.datetime.now()),
-                                  data=(torch.ones(10)*rank).tolist()),
-                             ))
+class cpu_process:
+
+    def __init__(self, rank):
+        print(f"cpu_process_initialization with rank {rank}")
+        os.environ['MASTER_ADDR'] = 'localhost'
+        os.environ['MASTER_PORT'] = '5555'
+        rpc.init_rpc(f"saver",
+                     rank=rank,
+                     world_size = world_size + no_of_saver_processes,
+                     backend=rpc.BackendType.TENSORPIPE,
+                     rpc_backend_options=rpc.TensorPipeRpcBackendOptions(rpc_timeout=0,
+                                                                         init_method='env://')
+                     )
+        print(f"Started CPU process {rank}")
+        self.run()
+
+    def run(self):
+        # flask_processing()
+        global feature_cache_obj
+        feature_cache_obj = feature_cache()
+        time.sleep(30)
+        cpu_process.shutdown()
+
+    @staticmethod
+    def shutdown():
+        for i in range(world_size):
+            _ = rpc.remote(f"{i}",
+                           cuda_process.shutdown,
+                           timeout=0)
+        rpc.shutdown()
+        return
+
+class cuda_process:
+    keep_running = True
+    def __init__(self, rank):
+        print("CALLED __init__")
+        os.environ['MASTER_ADDR'] = 'localhost'
+        os.environ['MASTER_PORT'] = '5555'
+        rpc.init_rpc(f"{rank}",
+                     rank=rank,
+                     world_size=world_size + no_of_saver_processes,
+                     backend=rpc.BackendType.TENSORPIPE,
+                     rpc_backend_options=rpc.TensorPipeRpcBackendOptions(rpc_timeout=0,
+                                                                         init_method='env://')
+                     )
+        print(f"Started CUDA process on gpu {rank}")
+        # Sleep to give the saver process sometime to initialize
         time.sleep(5)
-    rpc.shutdown()
-    return
+        # self.rank = rank
+        self.run(rank)
+        rpc.shutdown()
+        return
+
+    @classmethod
+    def shutdown(cls):
+        cls.keep_running = False
+
+    def run(self, rank):
+        print("CALLED __call__")
+        print(f"Started CUDA process on gpu {rank}")
+        # self.__init__(rank)
+        while cuda_process.keep_running:
+            print(f"{rank} Trying to insert into cache")
+            _ = rpc.remote(f"saver",
+                           helper,
+                           timeout=0,
+                           args=(dict(time=str(datetime.datetime.now()),
+                                      data=(torch.ones(10)*rank).tolist()),
+                                 ))
+            time.sleep(5)
+        return
 
 if __name__ == "__main__":
     mp.set_start_method('forkserver', force=True)
     print("Starting CPU processes")
-    p = mp.Process(target=cpu_process_initialization,
+    p = mp.Process(target=cpu_process,
                    args=(world_size,))
     p.start()
     print("Starting CUDA processes")
-    trainer_processes = mp.spawn(cuda_process_initialization,
+    trainer_processes = mp.spawn(cuda_process,#cuda_process_initialization,
                                  nprocs=world_size,
                                  join=False)
     print("Joining all processes")
-    time.sleep(30)
-    print("TERMINATING SAVER")
-    p.terminate()
-    trainer_processes.join()
-    p.join()
-    print("Processes joined ... Ending")
+    # time.sleep(30)
+    # print("TERMINATING SAVER")
+    # p.terminate()
+    try:
+        trainer_processes.join()
+        p.join()
+        print("Processes joined ... Ending")
+    except KeyboardInterrupt:
+        print("KEYBOARD INTERRUPT")
