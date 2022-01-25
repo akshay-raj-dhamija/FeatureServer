@@ -7,6 +7,10 @@ import torch.multiprocessing as mp
 import torch.distributed.rpc as rpc
 from collections import deque
 import datetime
+import requests
+from flask import Flask
+from flask import request
+import logging
 
 no_of_saver_processes = 1
 world_size = 2  # torch.cuda.device_count()
@@ -26,22 +30,13 @@ class feature_cache:
             return dict(l=len(self.data), d="EMPTY")
 
 
-def get_helper():
-    return feature_cache_obj.get()
-
-
-def flask_processing():
+def flask_processing(feature_cache_obj):
     print("Starting flask_processing")
-    from flask import Flask
-    from flask import request
-    import logging
 
     app = Flask(__name__)
     # Suppressing flask logs only to error because we want the input to be accepted by main process
     log = logging.getLogger("werkzeug")
     log.setLevel(logging.ERROR)
-    global feature_cache_obj
-    feature_cache_obj = feature_cache()
 
     @app.route("/data")
     def hello():
@@ -59,12 +54,9 @@ def flask_processing():
     return
 
 
-def helper(t):
-    global feature_cache_obj
-    feature_cache_obj(t)
-
-
 class cpu_process:
+    feature_cache_obj = feature_cache()
+
     def __init__(self, rank):
         print(f"cpu_process_initialization with rank {rank}")
         os.environ["MASTER_ADDR"] = "localhost"
@@ -81,9 +73,9 @@ class cpu_process:
         print(f"Started CPU process {rank}")
         cpu_process.run()
 
-    @staticmethod
-    def run():
-        flask_processing()
+    @classmethod
+    def run(cls):
+        flask_processing(cls.feature_cache_obj)
         cpu_process.shutdown()
 
     @staticmethod
@@ -92,6 +84,10 @@ class cpu_process:
             _ = rpc.remote(f"{i}", cuda_process.shutdown, timeout=0)
         rpc.shutdown()
         return
+
+    @staticmethod
+    def cacher(t):
+        cpu_process.feature_cache_obj(t)
 
 
 class cuda_process:
@@ -125,7 +121,7 @@ class cuda_process:
         while cuda_process.keep_running:
             _ = rpc.remote(
                 "saver",
-                helper,
+                cpu_process.cacher,
                 timeout=0,
                 args=(
                     dict(
@@ -144,16 +140,12 @@ if __name__ == "__main__":
     p = mp.Process(target=cpu_process, args=(world_size,))
     p.start()
     print("Starting CUDA processes")
-    trainer_processes = mp.spawn(
-        cuda_process, nprocs=world_size, join=False  # cuda_process_initialization,
-    )
+    trainer_processes = mp.spawn(cuda_process, nprocs=world_size, join=False)
     print("Joining all processes")
     print(" IMPORTANT: For a graceful shutdown enter [y/Y] ".center(90, "-"))
     s = input()
     print(f"Registered {s}")
     if s == "y" or s == "Y":
-        import requests
-
         requests.post("http://localhost:9999/shutdown")
     trainer_processes.join()
     p.join()
