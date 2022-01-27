@@ -6,7 +6,6 @@ This file is responsible for the following:
     Sending the shutdown signal to the inferencing processes
 """
 import os
-import time
 import torch.distributed.rpc as rpc
 from vast.tools import logger as vastlogger
 from FeatureServer.api_plus_cacher import cache

@@ -58,26 +58,50 @@ def command_line_options():
         help="Logs directory",
     )
     parser.add_argument(
-        "--layer_names",
-        nargs="+",
-        help="The layers to extract from the network",
-        default=["avgpool"],
-    )
-    parser.add_argument(
         "--network_architecture",
         help="The network architecture for which a layer needs to be extracted from the network",
         default="resnet50",
     )
+    parser.add_argument(
+        "--layer_names",
+        nargs="+",
+        help="The layers to extract from the network\ndefault: %(default)s",
+        default=["avgpool"],
+    )
+    parser.add_argument(
+        "--batch_size",
+        help="Batch size on each GPU\ndefault: %(default)s",
+        type=int,
+        default=256,
+    )
+    parser.add_argument(
+        "--workers",
+        help="number of workers for dataloading used by a single inference process\ndefault: %(default)s",
+        type=int,
+        default=5,
+    )
+    parser.add_argument(
+        "--csv_path",
+        help="The path to the csv file containing the list of images to load\ndefault: %(default)s",
+        type=pathlib.Path,
+        default="/home/adhamija/The/protocol/train_knowns.csv",
+    )
+    parser.add_argument(
+        "--dataset_path",
+        help="The path to the dataset containing all the images to be loaded\ndefault: %(default)s",
+        type=pathlib.Path,
+        default="/scratch/datasets/ImageNet/ILSVRC_2012",
+    )
     # TODO - only initializes, not yet used
     parser.add_argument(
         "--network_weights",
-        help="The weights used to initialize the network architecture with",
+        help="The weights used to initialize the network architecture with\ndefault: %(default)s",
         type=pathlib.Path,
         default=None,
     )
     parser.add_argument(
         "--augmentations_per_image",
-        help="number of augmentations to perform per image",
+        help="number of augmentations to perform per image\ndefault: %(default)s",
         type=int,
         default=1,
     )

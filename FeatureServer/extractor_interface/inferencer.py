@@ -6,8 +6,7 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel
 import torch.distributed.rpc as rpc
 from vast import data_prep
-
-# from vast.tools import model_operations
+from vast.tools import model_operations
 from vast.tools import logger as vastlogger
 from FeatureServer.api_plus_cacher import starter
 
@@ -39,19 +38,27 @@ class inference_process:
         )
         torch.cuda.set_device(rank)
         os.environ["CUDA_VISIBLE_DEVICES"] = f"{rank}"
-        # Sleep to give the saver process sometime to initialize
-        time.sleep(5)
-        """
-        modelObj = model_operations(args, gpu)
-        modelObj.model.eval()
-        modelObj.model.cuda()
-        if args.world_size > 1:
-            modelObj.model = DistributedDataParallel(modelObj.model, device_ids=[gpu])
 
-            data_loader = data_prep.ImageNetPytorch()
-            for i, data in enumerate(data_loader, start=0):
-                features, Logit = modelObj(x)
-        """
+        # Data Loader
+        dataset = data_prep.ImageNetPytorch(
+            csv_file=args.csv_path, images_path=args.dataset_path
+        )
+        sampler = None  # torch.utils.data.distributed.DistributedSampler(dataset)
+        self.dataloader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.workers,
+            pin_memory=True,
+            sampler=sampler,
+        )
+
+        # Model initialization
+        self.modelObj = model_operations(
+            args.network_architecture, args.network_weights, args.layer_names
+        )
+        self.modelObj.model.eval()
+        self.modelObj.model.cuda()
         self.run(rank)
         inference_process.logger.info(f"Shutting down inferencer with PID {os.getpid()}")
         rpc.shutdown()
@@ -63,17 +70,21 @@ class inference_process:
 
     def run(self, rank):
         inference_process.logger.info("Running inferencer")
-        while inference_process.keep_running:
+        for i, data in enumerate(self.dataloader):
+            images, labels, class_names, image_ids = data
+            inference_process.logger.debug(
+                f"{images.shape}, {labels.shape}, {len(class_names)}, {len(image_ids)}"
+            )
+            with torch.no_grad():
+                features_dict = self.modelObj(images.cuda())
+            for k in features_dict:
+                features_dict[k] = torch.squeeze(features_dict[k].cpu()).tolist()
             _ = rpc.remote(
                 "saver",
                 starter.cacher,
                 timeout=0,
-                args=(
-                    dict(
-                        time=str(datetime.datetime.now()),
-                        data=(torch.ones(10) * rank).tolist(),
-                    ),
-                ),
+                args=(features_dict,),
             )
-            time.sleep(2)
+            if not inference_process.keep_running:
+                break
         return
