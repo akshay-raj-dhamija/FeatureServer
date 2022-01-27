@@ -1,6 +1,6 @@
+import logging
 from flask import Flask
 from flask import request
-import logging
 
 
 def api_interface(cache_obj, logger):
@@ -12,8 +12,13 @@ def api_interface(cache_obj, logger):
     log.setLevel(logging.ERROR)
 
     @app.route("/data")
-    def hello():
+    def get_oldest_entry():
         return cache_obj.get()
+
+    @app.route("/after")
+    def get_entries_after():
+        args = request.args
+        return cache_obj.get_after(float(args["timestamp"]))
 
     @app.route("/shutdown", methods=["POST"])
     def shutdown():

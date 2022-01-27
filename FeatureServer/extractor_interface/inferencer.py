@@ -1,6 +1,5 @@
 import os
 import time
-import datetime
 import torch
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel
@@ -39,10 +38,21 @@ class inference_process:
         torch.cuda.set_device(rank)
         os.environ["CUDA_VISIBLE_DEVICES"] = f"{rank}"
 
-        # Data Loader
+        # Dataset initialization
         dataset = data_prep.ImageNetPytorch(
             csv_file=args.csv_path, images_path=args.dataset_path
         )
+
+        # Reset cache queue size according to dataset size
+        if rank == 0:
+            _ = rpc.remote(
+                "saver",
+                starter.reset_q_size,
+                timeout=0,
+                args=(len(dataset),),
+            )
+
+        # Dataset sampler and loader
         sampler = None  # torch.utils.data.distributed.DistributedSampler(dataset)
         self.dataloader = torch.utils.data.DataLoader(
             dataset,
@@ -59,7 +69,11 @@ class inference_process:
         )
         self.modelObj.model.eval()
         self.modelObj.model.cuda()
+
+        # Start inferencing
         self.run(rank)
+
+        # Inferencing done, exiting
         inference_process.logger.info(f"Shutting down inferencer with PID {os.getpid()}")
         rpc.shutdown()
         return

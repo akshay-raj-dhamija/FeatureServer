@@ -41,6 +41,10 @@ class starter:
         starter.shutdown()
 
     @staticmethod
+    def reset_q_size(max_len):
+        starter.cache_obj.reset_cache_size(starter.args.max_cache_size_factor * max_len)
+
+    @staticmethod
     def shutdown():
         from FeatureServer.extractor_interface import inference_process
 

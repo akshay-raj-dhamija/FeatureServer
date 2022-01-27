@@ -92,6 +92,14 @@ def command_line_options():
         type=pathlib.Path,
         default="/scratch/datasets/ImageNet/ILSVRC_2012",
     )
+    parser.add_argument(
+        "--max_cache_size_factor",
+        help="maximum elements to store in the cache, follows LRU\n"
+        "This `num` is a multiplication factor, final length is num*len(dataset)\n"
+        "default: %(default)s",
+        type=float,
+        default=1,
+    )
     # TODO - only initializes, not yet used
     parser.add_argument(
         "--network_weights",
