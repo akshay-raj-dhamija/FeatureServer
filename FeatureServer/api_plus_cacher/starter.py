@@ -6,6 +6,7 @@ This file is responsible for the following:
     Sending the shutdown signal to the inferencing processes
 """
 import os
+import time
 import torch.distributed.rpc as rpc
 from vast.tools import logger as vastlogger
 from FeatureServer.api_plus_cacher import cache
@@ -51,6 +52,14 @@ class starter:
         for i in range(starter.args.world_size):
             starter.logger.info(f"Sending shutdown signal to {i}")
             _ = rpc.remote(f"{i}", inference_process.shutdown, timeout=0)
+        starter.logger.info("Sleeping for five minutes to let dataloaders shutdown")
+        starter.logger.info(
+            "Please note while this seems to work in some cases if you specified --workers > 1"
+            "on the command line, there is a high probability you will be shown error messages"
+            "now even though inferences processes have been shutdown successfully. "
+            "Donot panic. Kindly use `killall python` to kill zombies."
+        )
+        time.sleep(300)
         rpc.shutdown()
         return
 
