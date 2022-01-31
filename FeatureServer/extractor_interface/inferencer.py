@@ -8,7 +8,7 @@ from vast import data_prep
 from vast.tools import model_operations
 from vast.tools import logger as vastlogger
 from FeatureServer.api_plus_cacher import starter
-
+from FeatureServer.extractor_interface import custom_sampler
 
 class inference_process:
     keep_running = True
@@ -53,7 +53,12 @@ class inference_process:
             )
 
         # Dataset sampler and loader
-        sampler = None  # torch.utils.data.distributed.DistributedSampler(dataset)
+        sampler = custom_sampler(dataset,
+                                 num_replicas = args.world_size,
+                                      rank = rank,
+                                      shuffle = True,
+                                      seed = 0,
+                                      drop_last = False)
         self.dataloader = torch.utils.data.DataLoader(
             dataset,
             batch_size=args.batch_size,
@@ -74,6 +79,8 @@ class inference_process:
         self.run(rank)
 
         # Inferencing done, exiting
+        inference_process.logger.info("Sleeping for five minutes to let dataloaders shutdown")
+        time.sleep(300)
         inference_process.logger.info(f"Shutting down inferencer with PID {os.getpid()}")
         rpc.shutdown()
         return
@@ -92,7 +99,7 @@ class inference_process:
             with torch.no_grad():
                 features_dict = self.modelObj(images.cuda())
             for k in features_dict:
-                features_dict[k] = torch.squeeze(features_dict[k].cpu()).tolist()
+                features_dict[k] = torch.squeeze(features_dict[k]).cpu().tolist()
             _ = rpc.remote(
                 "saver",
                 starter.cacher,

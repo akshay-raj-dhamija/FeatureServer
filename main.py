@@ -59,7 +59,7 @@ def command_line_options():
     )
     parser.add_argument(
         "--network_architecture",
-        help="The network architecture for which a layer needs to be extracted from the network",
+        help="The network architecture for which a layer needs to be extracted from the network\ndefault: %(default)s",
         default="resnet50",
     )
     parser.add_argument(
