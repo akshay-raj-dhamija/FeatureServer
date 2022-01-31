@@ -53,14 +53,14 @@ head.
 The MLP head can fetch the data for each epoch or more samples asyncronously using API's.
 This architectural solution is detailed in the figure below.
 
-![Feature Server Training Pipeline](Images/FeatureServer_Architecture.png?raw=true "Feature Server Training Pipeline")
+![Feature Server Training Pipeline](Images/feature_server_pipeline.jpeg?raw=true "Feature Server Training Pipeline")
 
 
 
 ### _Design & Architecture_
 The following diagram details the architecture followed by the code in this repository.
 
-![Architecture details](Images/architecture.jpg?raw=true "Architecture details")
+![Architecture details](Images/FeatureServer_Architecture.png?raw=true "Architecture details")
 
 
 ### _Available API's & Usage examples_
